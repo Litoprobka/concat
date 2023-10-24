@@ -1,0 +1,91 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.35.2.
+--
+-- see: https://github.com/sol/hpack
+
+name:           concat
+version:        0.1.0.0
+description:    Please see the README on GitHub at <https://github.com/litoprobka/concat#readme>
+homepage:       https://github.com/Litoprobka/concat#readme
+bug-reports:    https://github.com/Litoprobka/concat/issues
+author:         Peter Burtsev
+maintainer:     Peter Burtsev
+copyright:      2023 Peter Burtsev
+license:        BSD-2-Clause
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/Litoprobka/concat
+
+library
+  exposed-modules:
+      Concat
+  other-modules:
+      Paths_concat
+  autogen-modules:
+      Paths_concat
+  hs-source-dirs:
+      src
+  default-extensions:
+      OverloadedStrings
+      NoImplicitPrelude
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      base >=4.7 && <5
+    , optics
+    , relude
+    , text
+    , transformers
+    , unordered-containers
+  default-language: GHC2021
+
+executable concat-exe
+  main-is: Main.hs
+  other-modules:
+      Paths_concat
+  autogen-modules:
+      Paths_concat
+  hs-source-dirs:
+      app
+  default-extensions:
+      OverloadedStrings
+      NoImplicitPrelude
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , concat
+    , optics
+    , relude
+    , text
+    , transformers
+    , unordered-containers
+  default-language: GHC2021
+
+test-suite concat-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Paths_concat
+  autogen-modules:
+      Paths_concat
+  hs-source-dirs:
+      test
+  default-extensions:
+      OverloadedStrings
+      NoImplicitPrelude
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      base >=4.7 && <5
+    , concat
+    , optics
+    , relude
+    , text
+    , transformers
+    , unordered-containers
+  default-language: GHC2021
