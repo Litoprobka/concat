@@ -1,28 +1,30 @@
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE BlockArguments #-}
 
 module Concat where
 
 import Data.HashMap.Strict qualified as Map
+import Data.Text qualified as Text
 import GHC.Generics ()
 import Optics
+import Parser
 import Relude hiding (swap, tail)
 import Relude.Unsafe (tail)
 import Types
-import Parser
 
 eval :: ASTNode -> Repl ()
-eval (NumLit n) = push $ Num n
-eval (TextLit text) = push $ Txt text
 eval (Word name) =
   preuse (#dict % ix name)
-    >>= fromMaybe (error $ "Word " <> name <> " is not defined")
-eval (Quote words') = push (Word' $ traverse_ eval words')
+    >>= fromMaybe (fail' $ "Word " <> name <> " is not defined")
+eval nonWord = push nonWord
 
-run :: Text -> IO [Value]
+fail' :: MonadFail m => Text -> m a
+fail' = fail . toString
+
+run :: Text -> IO [ASTNode]
 run code = case parseAST $ tokenize code of
-  Nothing -> error "Parse error somewhere"
+  Nothing -> fail' "Parse error somewhere"
   Just ast -> fmap stack $ traverse_ eval ast `execStateT` ReplState{stack = [], dict = builtins}
 
 builtins :: Map.HashMap Text WordAction
@@ -31,12 +33,12 @@ builtins =
     [ ("pop", void pop)
     , ("dup", dup)
     , ("swap", swap)
-    , ("apply", apply)
+    , ("apply", pop >>= apply)
     , ("if", ifWord)
-    , ("when", push (Word' pass) >> ifWord)
-    , ("unless", push (Word' pass) >> swap >> ifWord)
+    , ("when", push (Quote []) >> ifWord)
+    , ("unless", push (Quote []) >> swap >> ifWord)
     , ("def", def)
-    , (".", pop >>= print)
+    , (".", pop >>= putTextLn . prettyNode)
     , ("+", binOp (+))
     , ("-", binOp (-))
     , ("*", binOp (*))
@@ -49,15 +51,15 @@ builtins =
     , ("!=", logicOp (/=))
     ]
 
-push :: Value -> Repl ()
+push :: ASTNode -> Repl ()
 push val = modifying' #stack (val :)
 
-peek :: Repl Value
-peek =
-  preuse (#stack % _head)
-    <&> fromMaybe (error "Attempted to pop empty stack")
+peek :: Repl ASTNode
+peek = do
+  mbHead <- preuse (#stack % _head)
+  whenNothing mbHead (fail' "Attempted to pop empty stack")
 
-pop :: Repl Value
+pop :: Repl ASTNode
 pop = do
   result <- peek
   modifying' #stack tail
@@ -75,34 +77,52 @@ swap = do
   push y
   push x
 
-apply :: Repl ()
-apply = do
-  Word' action <- pop
-  action
+apply :: ASTNode -> Repl ()
+apply (Quote values) = traverse_ eval values
+apply word@Word{} = eval word
+apply other = fail' $ "Attempted to call " <> prettyNode other
+
+asNum :: ASTNode -> Repl Int
+asNum (NumLit n) = pure n
+asNum other = fail' $ "Expected a number, got " <> prettyNode other
+
+asText :: ASTNode -> Repl Text
+asText (TextLit text) = pure text
+asText other = fail' $ "Expected text, got " <> prettyNode other
 
 ifWord :: Repl ()
 ifWord = do
-  Word' onFalse <- pop
-  Word' onTrue <- pop
-  Num cond <- pop
-  if cond == 0
-    then onFalse
-    else onTrue
+  onFalse <- pop
+  onTrue <- pop
+  cond <- asNum =<< pop
+  apply $
+    if cond == 0
+      then onFalse
+      else onTrue
 
 def :: Repl ()
 def = do
-  Word' quote <- pop
-  Txt name <- pop
-  modify' $ #dict % at name ?~ quote
+  quote <- pop
+  name <- asText =<< pop
+  modify' $ #dict % at name ?~ apply quote
 
 binOp :: (Int -> Int -> Int) -> Repl ()
 binOp op = do
-  Num y <- pop
-  Num x <- pop
-  push $ Num $ x `op` y
+  y <- asNum =<< pop
+  x <- asNum =<< pop
+  push $ NumLit $ x `op` y
 
 logicOp :: (Int -> Int -> Bool) -> Repl ()
 logicOp op = do
-  Num y <- pop
-  Num x <- pop
-  push $ Num $ if x `op` y then 1 else 0
+  y <- asNum =<< pop
+  x <- asNum =<< pop
+  push $ NumLit $ if x `op` y then 1 else 0
+
+prettyPrint :: [ASTNode] -> Text
+prettyPrint ast = "[" <> Text.unwords (map prettyNode ast) <> "]"
+
+prettyNode :: ASTNode -> Text
+prettyNode (NumLit n) = show n
+prettyNode (TextLit text) = show text
+prettyNode (Word name) = name
+prettyNode (Quote quote) = prettyPrint quote

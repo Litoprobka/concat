@@ -9,5 +9,5 @@ main = do
   case args of
     [] -> putTextLn "No program to run"
     program : _ -> do
-      finalStack <- run $ fromString $ program
-      print finalStack
+      finalStack <- run $ fromString program
+      putTextLn $ prettyPrint finalStack

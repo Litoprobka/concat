@@ -2,7 +2,6 @@ module Types where
 
 import Relude
 import qualified Data.HashMap.Strict as Map
-import Text.Show qualified as Show
 import Optics ()
 
 data Token
@@ -21,18 +20,8 @@ data ASTNode
 
 type WordAction = Repl ()
 
-data Value
-  = Num Int
-  | Txt Text
-  | Word' WordAction
-
-instance Show Value where
-  show (Num n) = show n
-  show (Txt text) = show text
-  show (Word' _) = "<word>"
-
 data ReplState = ReplState
-  { stack :: [Value]
+  { stack :: [ASTNode]
   , dict :: Map.HashMap Text WordAction
   }
   deriving (Generic)
