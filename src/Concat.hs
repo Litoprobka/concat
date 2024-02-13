@@ -41,11 +41,13 @@ builtins =
     , ("when", push (Quote []) >> ifWord)
     , ("unless", push (Quote []) >> swap >> ifWord)
     , ("def", def)
+    , ("defGlobal", defGlobal)
     , ("onQuote", onQuote)
     , ("peekQuote", peekQuote)
     , ("popQuote", popQuote)
     , ("pushQuote", pushQuote)
     , ("empty?", isEmpty)
+    , ("local", pop >>= local')
     , (".", pop >>= putTextLn . prettyNode)
     , ("+", binOp (+))
     , ("-", binOp (-))
@@ -147,6 +149,12 @@ def :: Repl ()
 def = do
   quote <- pop
   name <- asText =<< pop
+  modify' $ #dict % at name ?~ local' quote
+
+defGlobal :: Repl ()
+defGlobal = do
+  quote <- pop
+  name <- asText =<< pop
   modify' $ #dict % at name ?~ apply quote
 
 onQuote :: Repl ()
@@ -192,6 +200,12 @@ isEmpty :: Repl ()
 isEmpty = do
   list <- asQuote =<< pop
   push $ boolToNum $ null list
+
+local' :: ASTNode -> Repl ()
+local' code = do
+  dict <- use #dict
+  apply code
+  modify' $ #dict .~ dict
 
 binOp :: (Int -> Int -> Int) -> Repl ()
 binOp op = do
