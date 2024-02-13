@@ -1,6 +1,6 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.35.2.
+-- This file has been generated from package.yaml by hpack version 0.36.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -53,29 +53,6 @@ executable concat-exe
       Paths_concat
   hs-source-dirs:
       app
-  default-extensions:
-      OverloadedStrings
-      NoImplicitPrelude
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
-  build-depends:
-      base >=4.7 && <5
-    , concat
-    , optics
-    , relude
-    , text
-    , transformers
-    , unordered-containers
-  default-language: GHC2021
-
-test-suite concat-test
-  type: exitcode-stdio-1.0
-  main-is: Spec.hs
-  other-modules:
-      Paths_concat
-  autogen-modules:
-      Paths_concat
-  hs-source-dirs:
-      test
   default-extensions:
       OverloadedStrings
       NoImplicitPrelude

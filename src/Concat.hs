@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE ViewPatterns #-}
 
 module Concat where
@@ -28,10 +29,10 @@ data ASTNode
   deriving (Show)
 
 -- Handwritten parsing for the fun of it
--- the code is nowhere close to nice, it feels like desugared parser combinators
+-- the code is nowhere close to being nice, it feels like desugared parser combinators
 
 tokenize :: Text -> [Token]
-tokenize txt
+tokenize txtWithNewlines
   | Text.null txt = []
   | otherwise =
       filter (not . isEmpty) $
@@ -44,6 +45,8 @@ tokenize txt
                  in TextLit' textLit : tokenize (Text.drop 1 rest')
               Just (bracket, rest) -> quoteToken bracket : tokenize rest
  where
+  txt = txtWithNewlines & Text.words & Text.unwords
+
   quoteToken '[' = QuoteStart
   quoteToken _ = QuoteEnd
 
@@ -129,10 +132,20 @@ builtins =
     , ("swap", swap)
     , ("apply", apply)
     , ("if", ifWord)
+    , ("when", push (Word' pass) >> ifWord)
+    , ("unless", push (Word' pass) >> swap >> ifWord)
+    , ("def", def)
+    , (".", pop >>= print)
     , ("+", binOp (+))
     , ("-", binOp (-))
     , ("*", binOp (*))
     , ("/", binOp div)
+    , (">", logicOp (>))
+    , ("<", logicOp (<))
+    , (">=", logicOp (>=))
+    , ("<=", logicOp (<=))
+    , ("==", logicOp (==))
+    , ("!=", logicOp (/=))
     ]
 
 run :: Text -> IO [Value]
@@ -141,7 +154,7 @@ run code = case parseAST $ tokenize code of
   Just ast -> fmap stack $ traverse_ eval ast `execStateT` ReplState{stack = [], dict = builtins}
 
 push :: Value -> Repl ()
-push val = modifying #stack (val :)
+push val = modifying' #stack (val :)
 
 peek :: Repl Value
 peek =
@@ -151,7 +164,7 @@ peek =
 pop :: Repl Value
 pop = do
   result <- peek
-  modifying #stack tail
+  modifying' #stack tail
   pure result
 
 dup :: Repl ()
@@ -173,15 +186,27 @@ apply = do
 
 ifWord :: Repl ()
 ifWord = do
-  Num cond <- pop
   Word' onFalse <- pop
   Word' onTrue <- pop
+  Num cond <- pop
   if cond == 0
     then onFalse
     else onTrue
+
+def :: Repl ()
+def = do
+  Word' quote <- pop
+  Txt name <- pop
+  modify' $ #dict % at name ?~ quote
 
 binOp :: (Int -> Int -> Int) -> Repl ()
 binOp op = do
   Num y <- pop
   Num x <- pop
   push $ Num $ x `op` y
+
+logicOp :: (Int -> Int -> Bool) -> Repl ()
+logicOp op = do
+  Num y <- pop
+  Num x <- pop
+  push $ Num $ if x `op` y then 1 else 0
