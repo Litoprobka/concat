@@ -26,6 +26,8 @@ source-repository head
 library
   exposed-modules:
       Concat
+      Parser
+      Types
   other-modules:
       Paths_concat
   autogen-modules:
