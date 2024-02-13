@@ -33,11 +33,19 @@ builtins =
     [ ("pop", void pop)
     , ("dup", dup)
     , ("swap", swap)
+    , ("swapd", swapd)
+    , ("rot", rot)
+    , ("rotd", rotd)
     , ("apply", pop >>= apply)
     , ("if", ifWord)
     , ("when", push (Quote []) >> ifWord)
     , ("unless", push (Quote []) >> swap >> ifWord)
     , ("def", def)
+    , ("onQuote", onQuote)
+    , ("peekQuote", peekQuote)
+    , ("popQuote", popQuote)
+    , ("pushQuote", pushQuote)
+    , ("empty?", isEmpty)
     , (".", pop >>= putTextLn . prettyNode)
     , ("+", binOp (+))
     , ("-", binOp (-))
@@ -77,10 +85,41 @@ swap = do
   push y
   push x
 
+swapd :: Repl ()
+swapd = do
+  z <- pop
+  y <- pop
+  x <- pop
+  push y
+  push x
+  push z
+
+rot :: Repl ()
+rot = do
+  z <- pop
+  y <- pop
+  x <- pop
+  push y
+  push z
+  push x
+
+rotd :: Repl ()
+rotd = do
+  z <- pop
+  y <- pop
+  x <- pop
+  w <- pop
+  push x
+  push y
+  push w
+  push z
+
 apply :: ASTNode -> Repl ()
 apply (Quote values) = traverse_ eval values
 apply word@Word{} = eval word
 apply other = fail' $ "Attempted to call " <> prettyNode other
+
+-- there should be a way to factor out this boilerplate
 
 asNum :: ASTNode -> Repl Int
 asNum (NumLit n) = pure n
@@ -88,7 +127,11 @@ asNum other = fail' $ "Expected a number, got " <> prettyNode other
 
 asText :: ASTNode -> Repl Text
 asText (TextLit text) = pure text
-asText other = fail' $ "Expected text, got " <> prettyNode other
+asText other = fail' $ "Expected a text, got " <> prettyNode other
+
+asQuote :: ASTNode -> Repl [ASTNode]
+asQuote (Quote quote) = pure quote
+asQuote other = fail' $ "Expected a quote, got " <> prettyNode other
 
 ifWord :: Repl ()
 ifWord = do
@@ -106,6 +149,50 @@ def = do
   name <- asText =<< pop
   modify' $ #dict % at name ?~ apply quote
 
+onQuote :: Repl ()
+onQuote = do
+  action <- pop
+  list <- asQuote =<< pop
+  prevStack <- use #stack
+
+  modify' $ #stack .~ list
+  apply action
+  newList <- use #stack
+
+  modify' $ #stack .~ prevStack
+  push $ Quote newList
+
+peekQuote :: Repl ()
+peekQuote = do
+  list <- asQuote =<< peek
+  case list of
+    [] -> fail' "Attempted to pop empty quote"
+    x : _ -> push x
+
+-- popQuote can be imlemented in terms of peekQuote, but we'd have to
+-- use Quote [Word "peekQuote"], which may be overridden by user code
+popQuote :: Repl ()
+popQuote = do
+  list <- asQuote =<< pop
+  case list of
+    [] -> fail' "Attempted to pop empty quote"
+    x : xs -> push (Quote xs) >> push x
+
+pushQuote :: Repl ()
+pushQuote = do
+  value <- pop
+  list <- asQuote =<< pop
+  push $ Quote $ value : list
+
+boolToNum :: Bool -> ASTNode
+boolToNum False = NumLit 0
+boolToNum True = NumLit 1
+
+isEmpty :: Repl ()
+isEmpty = do
+  list <- asQuote =<< pop
+  push $ boolToNum $ null list
+
 binOp :: (Int -> Int -> Int) -> Repl ()
 binOp op = do
   y <- asNum =<< pop
@@ -116,7 +203,7 @@ logicOp :: (Int -> Int -> Bool) -> Repl ()
 logicOp op = do
   y <- asNum =<< pop
   x <- asNum =<< pop
-  push $ NumLit $ if x `op` y then 1 else 0
+  push $ boolToNum $ x `op` y
 
 prettyPrint :: [ASTNode] -> Text
 prettyPrint ast = "[" <> Text.unwords (map prettyNode ast) <> "]"
