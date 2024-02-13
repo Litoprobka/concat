@@ -13,8 +13,15 @@ import Relude hiding (swap, tail)
 import Relude.Unsafe (tail)
 import Types
 
-eval :: ASTNode -> Repl ()
-eval (Word name) =
+nodeToValue :: ASTNode -> Value
+nodeToValue (NumLit n) = Num n
+nodeToValue (TextLit text) = Txt text
+nodeToValue (Quote nodes) = Quote' $ map nodeToValue nodes
+nodeToValue (Word name) = Word' name
+
+eval :: Value -> Repl ()
+eval (CompiledWord action) = action
+eval (Word' name) =
   preuse (#dict % ix name)
     >>= fromMaybe (fail' $ "Word " <> name <> " is not defined")
 eval nonWord = push nonWord
@@ -22,10 +29,10 @@ eval nonWord = push nonWord
 fail' :: MonadFail m => Text -> m a
 fail' = fail . toString
 
-run :: Text -> IO [ASTNode]
+run :: Text -> IO [Value]
 run code = case parseAST $ tokenize code of
   Nothing -> fail' "Parse error somewhere"
-  Just ast -> fmap stack $ traverse_ eval ast `execStateT` ReplState{stack = [], dict = builtins}
+  Just ast -> fmap stack $ traverse_ (eval . nodeToValue) ast `execStateT` ReplState{stack = [], dict = builtins}
 
 builtins :: Map.HashMap Text WordAction
 builtins =
@@ -38,8 +45,8 @@ builtins =
     , ("rotd", rotd)
     , ("apply", pop >>= apply)
     , ("if", ifWord)
-    , ("when", push (Quote []) >> ifWord)
-    , ("unless", push (Quote []) >> swap >> ifWord)
+    , ("when", push noop >> ifWord)
+    , ("unless", push noop >> swap >> ifWord)
     , ("def", def)
     , ("def-global", defGlobal)
     , ("on-quote", onQuote)
@@ -61,15 +68,18 @@ builtins =
     , ("!=", logicOp (/=))
     ]
 
-push :: ASTNode -> Repl ()
+noop :: Value
+noop = CompiledWord pass
+
+push :: Value -> Repl ()
 push val = modifying' #stack (val :)
 
-peek :: Repl ASTNode
+peek :: Repl Value
 peek = do
   mbHead <- preuse (#stack % _head)
   whenNothing mbHead (fail' "Attempted to pop empty stack")
 
-pop :: Repl ASTNode
+pop :: Repl Value
 pop = do
   result <- peek
   modifying' #stack tail
@@ -116,23 +126,24 @@ rotd = do
   push w
   push z
 
-apply :: ASTNode -> Repl ()
-apply (Quote values) = traverse_ eval values
-apply word@Word{} = eval word
+apply :: Value -> Repl ()
+apply (Quote' values) = traverse_ eval values
+apply word@Word'{} = eval word
+apply cword@CompiledWord{} = eval cword
 apply other = fail' $ "Attempted to call " <> prettyNode other
 
 -- there should be a way to factor out this boilerplate
 
-asNum :: ASTNode -> Repl Int
-asNum (NumLit n) = pure n
+asNum :: Value -> Repl Int
+asNum (Num n) = pure n
 asNum other = fail' $ "Expected a number, got " <> prettyNode other
 
-asText :: ASTNode -> Repl Text
-asText (TextLit text) = pure text
+asText :: Value -> Repl Text
+asText (Txt text) = pure text
 asText other = fail' $ "Expected a text, got " <> prettyNode other
 
-asQuote :: ASTNode -> Repl [ASTNode]
-asQuote (Quote quote) = pure quote
+asQuote :: Value -> Repl [Value]
+asQuote (Quote' quote) = pure quote
 asQuote other = fail' $ "Expected a quote, got " <> prettyNode other
 
 ifWord :: Repl ()
@@ -168,7 +179,7 @@ onQuote = do
   newList <- use #stack
 
   modify' $ #stack .~ prevStack
-  push $ Quote newList
+  push $ Quote' newList
 
 peekQuote :: Repl ()
 peekQuote = do
@@ -181,27 +192,27 @@ peekQuote = do
 -- use Quote [Word "peekQuote"], which may be overridden by user code
 popQuote :: Repl ()
 popQuote = do
-  list <- asQuote =<< pop
-  case list of
-    [] -> fail' "Attempted to pop empty quote"
-    x : xs -> push (Quote xs) >> push x
+  peekQuote
+  value <- pop
+  push (CompiledWord $ void pop) >> onQuote
+  push value
 
 pushQuote :: Repl ()
 pushQuote = do
   value <- pop
   list <- asQuote =<< pop
-  push $ Quote $ value : list
+  push $ Quote' $ value : list
 
-boolToNum :: Bool -> ASTNode
-boolToNum False = NumLit 0
-boolToNum True = NumLit 1
+boolToNum :: Bool -> Value
+boolToNum False = Num 0
+boolToNum True = Num 1
 
 isEmpty :: Repl ()
 isEmpty = do
   list <- asQuote =<< pop
   push $ boolToNum $ null list
 
-local' :: ASTNode -> Repl ()
+local' :: Value -> Repl ()
 local' code = do
   dict <- use #dict
   apply code
@@ -211,7 +222,7 @@ binOp :: (Int -> Int -> Int) -> Repl ()
 binOp op = do
   y <- asNum =<< pop
   x <- asNum =<< pop
-  push $ NumLit $ x `op` y
+  push $ Num $ x `op` y
 
 logicOp :: (Int -> Int -> Bool) -> Repl ()
 logicOp op = do
@@ -219,11 +230,12 @@ logicOp op = do
   x <- asNum =<< pop
   push $ boolToNum $ x `op` y
 
-prettyPrint :: [ASTNode] -> Text
+prettyPrint :: [Value] -> Text
 prettyPrint ast = "[" <> Text.unwords (map prettyNode ast) <> "]"
 
-prettyNode :: ASTNode -> Text
-prettyNode (NumLit n) = show n
-prettyNode (TextLit text) = show text
-prettyNode (Word name) = name
-prettyNode (Quote quote) = prettyPrint quote
+prettyNode :: Value -> Text
+prettyNode (Num n) = show n
+prettyNode (Txt text) = show text
+prettyNode (Word' name) = name
+prettyNode CompiledWord{} = "<word>"
+prettyNode (Quote' quote) = prettyPrint quote

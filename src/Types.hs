@@ -20,8 +20,15 @@ data ASTNode
 
 type WordAction = Repl ()
 
+data Value
+  = Num Int
+  | Txt Text
+  | Word' Text
+  | CompiledWord WordAction
+  | Quote' [Value]
+
 data ReplState = ReplState
-  { stack :: [ASTNode]
+  { stack :: [Value]
   , dict :: Map.HashMap Text WordAction
   }
   deriving (Generic)
